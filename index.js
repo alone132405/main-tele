@@ -97,26 +97,38 @@ async function main() {
     const msg = event.message;
     if (!msg || !msg.text) return;
     if (msg.text.startsWith('/schedule ')) {
-      // Format: /schedule HH:mm message
-      const parts = msg.text.split(' ');
-      if (parts.length < 3) {
-        await client.sendMessage(msg.chatId, { message: 'Usage: /schedule HH:mm message' });
-        return;
-      }
-      const time = parts[1];
-      const message = msg.text.substring(msg.text.indexOf(time) + time.length + 1);
+      // Support multiple schedules in one message (split by newlines or semicolons)
       const chatId = msg.chatId || msg.peerId || msg.peerId?.channelId || msg.peerId?.userId || msg.peerId?.chatId;
       if (!chatId) {
         await client.sendMessage(msg.chatId, { message: 'Could not determine chat ID.' });
         return;
       }
-      // Validate time format HH:mm
-      if (!/^\d{2}:\d{2}$/.test(time)) {
-        await client.sendMessage(chatId, { message: 'Time must be in HH:mm format (e.g., 09:30)' });
-        return;
+      // Split message into multiple schedule commands
+      const scheduleLines = msg.text.split(/\n|;/).map(line => line.trim()).filter(line => line.startsWith('/schedule '));
+      let scheduledCount = 0;
+      let failedCount = 0;
+      for (const line of scheduleLines) {
+        const parts = line.split(' ');
+        if (parts.length < 3) {
+          failedCount++;
+          continue;
+        }
+        const time = parts[1];
+        const message = line.substring(line.indexOf(time) + time.length + 1);
+        // Validate time format HH:mm
+        if (!/^\d{2}:\d{2}$/.test(time)) {
+          failedCount++;
+          continue;
+        }
+        addAndScheduleDaily(chatId, message, time, false);
+        scheduledCount++;
       }
-      addAndScheduleDaily(chatId, message, time, false);
-      await client.sendMessage(chatId, { message: `Scheduled daily message at ${time}: ${message}` });
+      let reply = '';
+      if (scheduledCount > 0) reply += `Scheduled ${scheduledCount} daily message(s).\n`;
+      if (failedCount > 0) reply += `${failedCount} schedule(s) failed (check format: /schedule HH:mm message).`;
+      if (!reply) reply = 'No valid schedules found.';
+      await client.sendMessage(chatId, { message: reply });
+      return;
     }
   }, new NewMessage({}));
 
